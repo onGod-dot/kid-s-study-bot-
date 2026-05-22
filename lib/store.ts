@@ -40,25 +40,26 @@ interface AppState {
   // User state
   currentUser: User | null
   setCurrentUser: (user: User) => void
-  
-  // Chat state
-  messages: ChatMessage[]
-  addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void
-  clearMessages: () => void
-  
+
+  // Per-avatar chat state
+  messagesByAvatar: Record<string, ChatMessage[]>
+  addMessage: (avatarId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => void
+  clearMessages: (avatarId: string) => void
+  getMessages: (avatarId: string) => ChatMessage[]
+
   // Assignment state
   assignments: Assignment[]
   addAssignment: (assignment: Omit<Assignment, 'id' | 'createdAt'>) => void
   updateAssignment: (id: string, updates: Partial<Assignment>) => void
-  
+
   // Progress tracking
   progress: Progress[]
   updateProgress: (userId: string, updates: Partial<Progress>) => void
-  
+
   // UI state
   isChatOpen: boolean
   setIsChatOpen: (open: boolean) => void
-  
+
   selectedAvatar: string
   setSelectedAvatar: (avatar: string) => void
 }
@@ -67,18 +68,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   // User state
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
-  
-  // Chat state
-  messages: [],
-  addMessage: (message) => set((state) => ({
-    messages: [...state.messages, {
-      ...message,
-      id: Date.now().toString(),
-      timestamp: new Date()
-    }]
+
+  // Per-avatar chat state
+  messagesByAvatar: {},
+  getMessages: (avatarId) => get().messagesByAvatar[avatarId] ?? [],
+  addMessage: (avatarId, message) => set((state) => {
+    const existing = state.messagesByAvatar[avatarId] ?? []
+    return {
+      messagesByAvatar: {
+        ...state.messagesByAvatar,
+        [avatarId]: [
+          ...existing,
+          { ...message, id: Date.now().toString(), timestamp: new Date() }
+        ]
+      }
+    }
+  }),
+  clearMessages: (avatarId) => set((state) => ({
+    messagesByAvatar: { ...state.messagesByAvatar, [avatarId]: [] }
   })),
-  clearMessages: () => set({ messages: [] }),
-  
+
   // Assignment state
   assignments: [],
   addAssignment: (assignment) => set((state) => ({
@@ -89,23 +98,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     }]
   })),
   updateAssignment: (id, updates) => set((state) => ({
-    assignments: state.assignments.map(assignment =>
-      assignment.id === id ? { ...assignment, ...updates } : assignment
+    assignments: state.assignments.map(a =>
+      a.id === id ? { ...a, ...updates } : a
     )
   })),
-  
+
   // Progress tracking
   progress: [],
   updateProgress: (userId, updates) => set((state) => ({
-    progress: state.progress.map(p => 
+    progress: state.progress.map(p =>
       p.userId === userId ? { ...p, ...updates } : p
     )
   })),
-  
+
   // UI state
   isChatOpen: false,
   setIsChatOpen: (open) => set({ isChatOpen: open }),
-  
+
   selectedAvatar: 'owl',
   setSelectedAvatar: (avatar) => set({ selectedAvatar: avatar }),
 }))

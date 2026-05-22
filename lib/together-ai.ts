@@ -37,6 +37,33 @@ export class TogetherAIService {
     }
   }
 
+  // Image generation via server-side API route
+  static async generateImage(prompt: string): Promise<string> {
+    try {
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(`Image API Error: ${err.error || response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      if (!data.imageUrl) {
+        throw new Error('No image URL returned')
+      }
+
+      return data.imageUrl
+    } catch (error) {
+      console.error('Image generation error:', error)
+      throw error
+    }
+  }
+
   // Speech to text using direct API call
   static async speechToText(file: File, language: string = 'en'): Promise<string> {
     try {

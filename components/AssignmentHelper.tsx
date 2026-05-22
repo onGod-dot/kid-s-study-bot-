@@ -11,9 +11,10 @@ import toast from 'react-hot-toast'
 interface AssignmentHelperProps {
   theme: 'forest' | 'space'
   ageGroup: 'kids' | 'teens'
+  avatarId: string
 }
 
-export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperProps) {
+export default function AssignmentHelper({ theme, ageGroup, avatarId }: AssignmentHelperProps) {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -83,7 +84,7 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
       })
 
       // Add a message to the chat about the assignment help
-      addMessage({
+      addMessage(avatarId, {
         role: 'assistant',
         content: `I've analyzed your assignment! I found ${steps.length} steps to help you work through it. Let's start with the first step and work through it together! 🎯`
       })
@@ -205,10 +206,10 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-6`}
+        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
       >
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-          <Camera className="w-6 h-6 mr-2" />
+        <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
+          <Camera className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
           Submit Your Assignment
         </h3>
         
@@ -343,10 +344,10 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-6`}
+          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
         >
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-            <FileText className="w-6 h-6 mr-2" />
+          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
+            <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
             Extracted Assignment Text
           </h3>
           
@@ -361,10 +362,10 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-6`}
+          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
         >
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-            <CheckCircle className="w-6 h-6 mr-2" />
+          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
+            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
             Step-by-Step Learning Guide
           </h3>
           
@@ -422,10 +423,10 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-6`}
+          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
         >
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-            <FileText className="w-6 h-6 mr-2" />
+          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
+            <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
             Complete Learning Guide
           </h3>
           
@@ -439,9 +440,9 @@ export default function AssignmentHelper({ theme, ageGroup }: AssignmentHelperPr
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-6`}
+        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
       >
-        <h3 className="text-xl font-bold text-white mb-4">Your Assignments</h3>
+        <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Your Assignments</h3>
         
         {assignments.length === 0 ? (
           <p className="text-white/60 text-center py-8">No assignments yet. Upload one to get started!</p>

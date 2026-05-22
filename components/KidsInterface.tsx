@@ -1,372 +1,213 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, TreePine, BookOpen, Code, Cpu, Camera, Mic, MicOff } from 'lucide-react'
+import { ArrowLeft, TreePine, BookOpen, Cpu, Camera, ChevronDown } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import ChatBot from '@/components/ChatBot'
 import AssignmentHelper from '@/components/AssignmentHelper'
-import SteamSection from '@/components/SteamSection'
+import GamesSection from '@/components/GamesSection'
+import AvatarPicker from '@/components/AvatarPicker'
 
 const forestAnimals = [
-  { id: 'owl', name: 'Wise Owl', emoji: '🦉', color: 'from-amber-400 to-orange-500' },
-  { id: 'monkey', name: 'Playful Monkey', emoji: '🐵', color: 'from-yellow-400 to-orange-500' },
-  { id: 'rabbit', name: 'Quick Rabbit', emoji: '🐰', color: 'from-gray-300 to-gray-500' },
-  { id: 'fox', name: 'Clever Fox', emoji: '🦊', color: 'from-orange-400 to-red-500' },
-  { id: 'deer', name: 'Gentle Deer', emoji: '🦌', color: 'from-amber-300 to-brown-500' },
-  { id: 'bear', name: 'Friendly Bear', emoji: '🐻', color: 'from-yellow-600 to-brown-600' }
+  { id: 'owl',    name: 'Wise Owl',       emoji: '🦉', color: 'from-amber-400 to-orange-500',  description: 'Patient & wise' },
+  { id: 'monkey', name: 'Playful Monkey', emoji: '🐵', color: 'from-yellow-400 to-orange-500', description: 'Fun & energetic' },
+  { id: 'rabbit', name: 'Quick Rabbit',   emoji: '🐰', color: 'from-pink-300 to-rose-400',     description: 'Fast learner' },
+  { id: 'fox',    name: 'Clever Fox',     emoji: '🦊', color: 'from-orange-400 to-red-500',    description: 'Sharp & curious' },
+  { id: 'deer',   name: 'Gentle Deer',    emoji: '🦌', color: 'from-amber-300 to-yellow-500',  description: 'Kind & calm' },
+  { id: 'bear',   name: 'Friendly Bear',  emoji: '🐻', color: 'from-yellow-600 to-amber-700',  description: 'Strong & caring' },
 ]
 
+const TABS = [
+  { id: 'chat',        label: 'Chat',         icon: BookOpen, emoji: '💬', color: 'from-green-500 to-emerald-500' },
+  { id: 'assignments', label: 'Homework',     icon: Camera,   emoji: '📚', color: 'from-blue-500 to-cyan-500' },
+  { id: 'games',       label: 'Games',        icon: Cpu,      emoji: '🎮', color: 'from-purple-500 to-pink-500' },
+]
+
+// Floating bg elements
+const BG = ['🌿','🍃','🌳','🌸','🦋','🐝','🍀','🌺']
+
 export default function KidsInterface({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'chat' | 'assignments' | 'stem'>('chat')
-  const [isListening, setIsListening] = useState(false)
+  const [activeTab, setActiveTab] = useState<'chat' | 'assignments' | 'games'>('chat')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const { selectedAvatar, setSelectedAvatar } = useAppStore()
 
-  // Set default avatar if none selected or if selected avatar is not in forest animals
-  const currentAvatar = forestAnimals.find(animal => animal.id === selectedAvatar) || forestAnimals[0]
-  
-  // Update store if needed
-  if (!forestAnimals.find(animal => animal.id === selectedAvatar)) {
-    setSelectedAvatar(forestAnimals[0].id)
-  }
+  const currentAvatar = forestAnimals.find(a => a.id === selectedAvatar) || forestAnimals[0]
+  if (!forestAnimals.find(a => a.id === selectedAvatar)) setSelectedAvatar(forestAnimals[0].id)
 
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Enhanced Background with Layers */}
-      <div className="absolute inset-0 bg-gradient-to-br from-green-900 via-green-800 to-emerald-900"></div>
-      <div className="absolute inset-0 bg-gradient-to-t from-green-900/50 via-transparent to-green-700/30"></div>
-      
-      {/* Professional Background Pattern */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 25% 25%, rgba(34, 197, 94, 0.3) 0%, transparent 50%),
-                           radial-gradient(circle at 75% 75%, rgba(16, 185, 129, 0.2) 0%, transparent 50%),
-                           radial-gradient(circle at 50% 50%, rgba(5, 150, 105, 0.1) 0%, transparent 50%)`,
-          backgroundSize: '400px 400px, 600px 600px, 800px 800px'
-        }}></div>
+      {/* Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-green-950 via-emerald-900 to-teal-950" />
+      <div className="absolute inset-0 opacity-20" style={{
+        backgroundImage: `radial-gradient(circle at 20% 30%, rgba(34,197,94,0.4) 0%, transparent 50%),
+                          radial-gradient(circle at 80% 70%, rgba(16,185,129,0.3) 0%, transparent 50%)`,
+      }} />
+
+      {/* Floating bg emojis */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {BG.map((e, i) => (
+          <motion.span key={i}
+            className="absolute text-4xl sm:text-5xl select-none"
+            style={{ left: `${8 + i * 11}%`, top: `${10 + (i * 13) % 75}%`, opacity: 0.12 }}
+            animate={{ y: [0, -20, 0], rotate: [0, i % 2 === 0 ? 8 : -8, 0] }}
+            transition={{ duration: 6 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.5 }}
+          >{e}</motion.span>
+        ))}
       </div>
 
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 pointer-events-none">
-        <motion.div
-          animate={{ 
-            y: [0, -30, 0],
-            rotate: [0, 10, 0],
-            scale: [1, 1.1, 1]
-          }}
-          transition={{ 
-            duration: 8,
-            repeat: Infinity,
-            ease: "easeInOut"
-          }}
-          className="absolute top-20 left-10 text-8xl opacity-25"
-        >
-          🌿
-        </motion.div>
-        <motion.div
-          animate={{ 
-            y: [0, 20, 0],
-            rotate: [0, -8, 0],
-            x: [0, 15, 0]
-          }}
-          transition={{ 
-            duration: 10,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 1
-          }}
-          className="absolute top-32 right-16 text-7xl opacity-20"
-        >
-          🍃
-        </motion.div>
-        <motion.div
-          animate={{ 
-            y: [0, -15, 0],
-            x: [0, 20, 0],
-            rotate: [0, 5, 0]
-          }}
-          transition={{ 
-            duration: 12,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 2
-          }}
-          className="absolute bottom-40 left-20 text-6xl opacity-25"
-        >
-          🌳
-        </motion.div>
-        <motion.div
-          animate={{ 
-            y: [0, 18, 0],
-            rotate: [0, 6, 0],
-            scale: [1, 1.05, 1]
-          }}
-          transition={{ 
-            duration: 9,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 3
-          }}
-          className="absolute bottom-20 right-10 text-6xl opacity-20"
-        >
-          🌸
-        </motion.div>
-        <motion.div
-          animate={{ 
-            y: [0, -12, 0],
-            x: [0, -10, 0]
-          }}
-          transition={{ 
-            duration: 11,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 4
-          }}
-          className="absolute top-1/2 left-1/3 text-5xl opacity-15"
-        >
-          🦋
-        </motion.div>
-        <motion.div
-          animate={{ 
-            y: [0, 14, 0],
-            rotate: [0, -4, 0]
-          }}
-          transition={{ 
-            duration: 13,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 5
-          }}
-          className="absolute top-1/3 right-1/4 text-4xl opacity-20"
-        >
-          🐝
-        </motion.div>
-      </div>
-
-      {/* Professional Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -30 }}
+      {/* ── Header ── */}
+      <motion.header
+        initial={{ opacity: 0, y: -24 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative bg-gradient-to-r from-green-600/40 via-emerald-600/40 to-teal-600/40 backdrop-blur-xl border-b-2 border-white/40 p-4 sm:p-6 lg:p-8 shadow-2xl"
+        className="relative z-10 bg-white/5 backdrop-blur-xl border-b border-white/10 shadow-xl"
       >
-        {/* Header Background Pattern */}
-        <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-transparent to-emerald-500/10"></div>
-        <div className="absolute inset-0" style={{
-          backgroundImage: `linear-gradient(45deg, rgba(34, 197, 94, 0.1) 25%, transparent 25%),
-                           linear-gradient(-45deg, rgba(16, 185, 129, 0.1) 25%, transparent 25%),
-                           linear-gradient(45deg, transparent 75%, rgba(5, 150, 105, 0.1) 75%),
-                           linear-gradient(-45deg, transparent 75%, rgba(6, 182, 212, 0.1) 75%)`,
-          backgroundSize: '20px 20px',
-          backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
-        }}></div>
-        <div className="relative max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between space-y-4 lg:space-y-0">
-          <motion.button
-            whileHover={{ scale: 1.08, x: -8 }}
-            whileTap={{ scale: 0.92 }}
-            onClick={onBack}
-            className="flex items-center space-x-2 sm:space-x-3 text-white hover:text-green-200 transition-all duration-300 bg-white/15 hover:bg-white/25 px-4 sm:px-6 py-2 sm:py-3 rounded-2xl backdrop-blur-md border-2 border-white/30 shadow-lg hover:shadow-xl"
-          >
-            <ArrowLeft className="w-4 h-4 sm:w-6 sm:h-6" />
-            <span className="font-semibold text-sm sm:text-lg">Back to Home</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-4">
+
+          {/* Back */}
+          <motion.button whileHover={{ x: -4 }} whileTap={{ scale: 0.95 }} onClick={onBack}
+            className="flex items-center gap-2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-3 sm:px-4 py-2 rounded-xl border border-white/10 transition-all text-sm font-medium">
+            <ArrowLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Home</span>
           </motion.button>
-          
-          <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4 lg:space-x-6">
-            <motion.div
-              animate={{ 
-                rotate: [0, 15, -15, 0],
-                scale: [1, 1.1, 1]
-              }}
-              transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              className="relative"
-            >
-              <div className="absolute inset-0 bg-white/20 rounded-full blur-lg"></div>
-              <TreePine className="relative w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 text-white drop-shadow-2xl" />
+
+          {/* Title */}
+          <div className="flex items-center gap-3 flex-1 justify-center">
+            <motion.div animate={{ rotate: [0, 12, -12, 0] }} transition={{ duration: 4, repeat: Infinity }}>
+              <TreePine className="w-6 h-6 sm:w-7 sm:h-7 text-emerald-400 drop-shadow" />
             </motion.div>
             <div className="text-center">
-              <motion.h1 
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white drop-shadow-2xl mb-1 sm:mb-2"
-              >
-                🌲 Forest Learning Academy
-              </motion.h1>
-              <motion.p 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="text-green-100 text-sm sm:text-base lg:text-lg font-medium"
-              >
-                Adventure awaits in the magical forest! 🌟
-              </motion.p>
+              <h1 className="text-base sm:text-xl font-black text-white leading-none">Forest Learning Academy</h1>
+              <p className="text-emerald-300/80 text-xs sm:text-sm font-medium">Adventure awaits! 🌟</p>
             </div>
           </div>
-          
-          <div className="flex flex-col items-center space-y-2 sm:space-y-4">
-            <span className="text-white/95 font-bold text-sm sm:text-base lg:text-lg">Choose your companion:</span>
-            <div className="flex flex-wrap justify-center gap-2 sm:gap-4">
-              {forestAnimals.map((animal) => (
-                <motion.button
-                  key={animal.id}
-                  whileHover={{ scale: 1.15, y: -4 }}
-                  whileTap={{ scale: 0.85 }}
-                  onClick={() => setSelectedAvatar(animal.id)}
-                  className={`p-2 sm:p-3 lg:p-4 rounded-2xl transition-all duration-300 ${
-                    selectedAvatar === animal.id
-                      ? 'bg-white/40 scale-110 shadow-2xl border-3 border-white/60 backdrop-blur-md'
-                      : 'bg-white/15 hover:bg-white/25 border-2 border-white/30 backdrop-blur-sm hover:shadow-lg'
-                  }`}
-                >
-                  <span className="text-2xl sm:text-3xl lg:text-4xl drop-shadow-2xl">{animal.emoji}</span>
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </motion.div>
 
-      {/* Main Content */}
-      <div className="relative max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-        {/* Content Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-green-800/20 via-emerald-800/10 to-teal-800/20 rounded-3xl blur-3xl"></div>
-        {/* Enhanced Tab Navigation */}
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 lg:space-x-6 mb-6 sm:mb-10"
-        >
-          {[
-            { id: 'chat', label: 'Chat with Buddy', icon: BookOpen, emoji: '💬', color: 'from-green-500 to-emerald-500' },
-            { id: 'assignments', label: 'Homework Help', icon: Camera, emoji: '📚', color: 'from-blue-500 to-cyan-500' },
-            { id: 'stem', label: 'STEM Learning', icon: Cpu, emoji: '🔬', color: 'from-purple-500 to-pink-500' }
-          ].map((tab) => (
-            <motion.button
-              key={tab.id}
-              whileHover={{ scale: 1.08, y: -4 }}
-              whileTap={{ scale: 0.92 }}
+          {/* Avatar trigger button */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setPickerOpen(true)}
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 rounded-2xl px-3 py-2 transition-all group"
+          >
+            <motion.div
+              animate={{ y: [0, -3, 0] }}
+              transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br ${currentAvatar.color} flex items-center justify-center text-xl sm:text-2xl shadow-lg border-2 border-white/30`}
+            >
+              {currentAvatar.emoji}
+            </motion.div>
+            <div className="hidden sm:block text-left">
+              <p className="text-white text-xs font-bold leading-none">{currentAvatar.name}</p>
+              <p className="text-white/50 text-xs mt-0.5">Change</p>
+            </div>
+            <ChevronDown className="w-3 h-3 text-white/40 group-hover:text-white/70 transition-colors" />
+          </motion.button>
+        </div>
+
+        {/* Tab bar */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 flex gap-2 sm:gap-3 overflow-x-auto scrollbar-none">
+          {TABS.map(tab => (
+            <motion.button key={tab.id}
+              whileTap={{ scale: 0.96 }}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`relative flex items-center justify-center sm:justify-start space-x-2 sm:space-x-4 px-4 sm:px-6 lg:px-10 py-3 sm:py-4 lg:py-5 rounded-3xl transition-all duration-300 ${
+              className={`relative flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex-shrink-0 ${
                 activeTab === tab.id
-                  ? `bg-gradient-to-r ${tab.color}/40 text-white shadow-2xl border-3 border-white/40 backdrop-blur-md`
-                  : 'bg-white/15 text-white/90 hover:bg-white/25 border-2 border-white/30 backdrop-blur-sm hover:shadow-xl'
+                  ? 'text-white bg-white/20 border border-white/30 shadow-lg'
+                  : 'text-white/60 hover:text-white hover:bg-white/10 border border-transparent'
               }`}
             >
-              <span className="text-2xl sm:text-3xl drop-shadow-lg">{tab.emoji}</span>
-              <tab.icon className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" />
-              <span className="font-bold text-sm sm:text-base lg:text-xl">{tab.label}</span>
+              <span className="text-base sm:text-lg">{tab.emoji}</span>
+              <span>{tab.label}</span>
               {activeTab === tab.id && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute inset-0 bg-gradient-to-r from-white/20 to-white/10 rounded-3xl"
-                  initial={false}
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                />
+                <motion.div layoutId="kids-tab-indicator"
+                  className={`absolute inset-0 rounded-xl bg-gradient-to-r ${tab.color} opacity-20`}
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }} />
               )}
             </motion.button>
           ))}
-        </motion.div>
+        </div>
+      </motion.header>
 
-        {/* Content Area */}
+      {/* ── Content ── */}
+      <div className="relative z-10 max-w-7xl mx-auto p-3 sm:p-6">
         <AnimatePresence mode="wait">
           {activeTab === 'chat' && (
-            <motion.div
-              key="chat"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.3 }}
+            <motion.div key="chat"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25 }}
+              className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6"
             >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-                {/* Chat Interface */}
-                <div className="lg:col-span-2">
-                  <ChatBot 
-                    theme="forest" 
-                    avatar={currentAvatar}
-                    ageGroup="kids"
-                  />
-                </div>
-                
-                {/* Companion Info */}
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="bg-gradient-to-br from-white/15 to-white/5 backdrop-blur-md rounded-3xl p-8 border border-white/30 shadow-2xl"
-                >
-                  <div className="text-center">
-                    <motion.div 
-                      animate={{ 
-                        y: [0, -10, 0],
-                        rotate: [0, 5, -5, 0]
-                      }}
-                      transition={{ 
-                        duration: 4,
-                        repeat: Infinity,
-                        ease: "easeInOut"
-                      }}
-                      className={`w-32 h-32 mx-auto mb-6 rounded-full bg-gradient-to-br ${currentAvatar.color} flex items-center justify-center text-6xl shadow-2xl border-4 border-white/30`}
-                    >
-                      {currentAvatar.emoji}
-                    </motion.div>
-                    <h3 className="text-2xl font-bold text-white mb-3 drop-shadow-lg">
-                      {currentAvatar.name}
-                    </h3>
-                    <p className="text-white/90 text-base mb-6 leading-relaxed">
-                      Your friendly learning companion! Click on me to chat and learn together. 🌟
-                    </p>
-                    
-                    <div className="space-y-3 text-sm">
-                      <motion.div 
-                        whileHover={{ scale: 1.05 }}
-                        className="flex items-center justify-between bg-white/10 rounded-xl p-3 border border-white/20"
-                      >
-                        <span className="text-white/80">Learning Level:</span>
-                        <span className="text-green-300 font-semibold">Beginner</span>
-                      </motion.div>
-                      <motion.div 
-                        whileHover={{ scale: 1.05 }}
-                        className="flex items-center justify-between bg-white/10 rounded-xl p-3 border border-white/20"
-                      >
-                        <span className="text-white/80">Specialty:</span>
-                        <span className="text-green-300 font-semibold">Math & Science</span>
-                      </motion.div>
-                      <motion.div 
-                        whileHover={{ scale: 1.05 }}
-                        className="flex items-center justify-between bg-white/10 rounded-xl p-3 border border-white/20"
-                      >
-                        <span className="text-white/80">Fun Factor:</span>
-                        <span className="text-yellow-300 font-semibold text-lg">⭐⭐⭐⭐⭐</span>
-                      </motion.div>
-                    </div>
-                  </div>
-                </motion.div>
+              <div className="lg:col-span-2">
+                <ChatBot theme="forest" avatar={currentAvatar} ageGroup="kids" />
               </div>
+
+              {/* Companion card — hidden on mobile, visible on lg+ */}
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+                className="hidden lg:flex bg-white/5 backdrop-blur-md rounded-3xl p-6 border border-white/10 shadow-xl flex-col items-center text-center">
+                <motion.button
+                  onClick={() => setPickerOpen(true)}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="group relative mb-4"
+                >
+                  <motion.div
+                    animate={{ y: [0, -8, 0], rotate: [0, 4, -4, 0] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                    className={`w-28 h-28 rounded-full bg-gradient-to-br ${currentAvatar.color} flex items-center justify-center text-5xl shadow-2xl border-4 border-white/20 group-hover:border-white/50 transition-all`}
+                  >
+                    {currentAvatar.emoji}
+                  </motion.div>
+                  <div className="absolute -bottom-1 -right-1 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full px-2 py-0.5 text-xs text-white font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                    Change
+                  </div>
+                </motion.button>
+
+                <h3 className="text-xl font-black text-white mb-1">{currentAvatar.name}</h3>
+                <p className="text-white/50 text-sm mb-5">{currentAvatar.description}</p>
+
+                <div className="w-full space-y-2 text-sm">
+                  {[
+                    { label: 'Level', value: 'Beginner', color: 'text-emerald-300' },
+                    { label: 'Focus', value: 'Math & Science', color: 'text-emerald-300' },
+                    { label: 'Fun', value: '⭐⭐⭐⭐⭐', color: 'text-yellow-300' },
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2 border border-white/10">
+                      <span className="text-white/60">{row.label}</span>
+                      <span className={`font-bold ${row.color}`}>{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
             </motion.div>
           )}
 
           {activeTab === 'assignments' && (
-            <motion.div
-              key="assignments"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <AssignmentHelper theme="forest" ageGroup="kids" />
+            <motion.div key="assignments"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25 }}>
+              <AssignmentHelper theme="forest" ageGroup="kids" avatarId={currentAvatar.id} />
             </motion.div>
           )}
 
-          {activeTab === 'stem' && (
-            <motion.div
-              key="stem"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <SteamSection theme="forest" ageGroup="kids" />
+          {activeTab === 'games' && (
+            <motion.div key="games"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+              transition={{ duration: 0.25 }}>
+              <GamesSection theme="forest" ageGroup="kids" />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Avatar picker modal */}
+      <AvatarPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        avatars={forestAnimals}
+        selectedId={currentAvatar.id}
+        onSelect={setSelectedAvatar}
+        theme="forest"
+      />
     </div>
   )
 }
