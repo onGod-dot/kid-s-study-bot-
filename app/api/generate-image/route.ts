@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_KEY = 'ab85f36a6259ab35ff4f2433e1b252e893e4a4ea4577580b60e82b47d1be5abc'
+const API_KEY = process.env.TOGETHER_API_KEY ?? ''
 
 export async function POST(req: NextRequest) {
+  if (!API_KEY) {
+    return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
+  }
+
   try {
     const { prompt } = await req.json()
 

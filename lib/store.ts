@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export interface User {
   id: string
@@ -13,7 +14,8 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  timestamp: Date
+  // Store as ISO string for JSON serialisation; convert to Date on read
+  timestamp: string
   audioUrl?: string
   imageUrl?: string
 }
@@ -25,7 +27,7 @@ export interface Assignment {
   description: string
   imageUrl?: string
   status: 'pending' | 'in_progress' | 'completed'
-  createdAt: Date
+  createdAt: string
 }
 
 export interface Progress {
@@ -33,7 +35,7 @@ export interface Progress {
   assignmentsCompleted: number
   timeSpent: number
   skillsLearned: string[]
-  lastActivity: Date
+  lastActivity: string
 }
 
 interface AppState {
@@ -64,57 +66,70 @@ interface AppState {
   setSelectedAvatar: (avatar: string) => void
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
-  // User state
-  currentUser: null,
-  setCurrentUser: (user) => set({ currentUser: user }),
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      // User state
+      currentUser: null,
+      setCurrentUser: (user) => set({ currentUser: user }),
 
-  // Per-avatar chat state
-  messagesByAvatar: {},
-  getMessages: (avatarId) => get().messagesByAvatar[avatarId] ?? [],
-  addMessage: (avatarId, message) => set((state) => {
-    const existing = state.messagesByAvatar[avatarId] ?? []
-    return {
-      messagesByAvatar: {
-        ...state.messagesByAvatar,
-        [avatarId]: [
-          ...existing,
-          { ...message, id: Date.now().toString(), timestamp: new Date() }
-        ]
-      }
+      // Per-avatar chat state
+      messagesByAvatar: {},
+      getMessages: (avatarId) => get().messagesByAvatar[avatarId] ?? [],
+      addMessage: (avatarId, message) => set((state) => {
+        const existing = state.messagesByAvatar[avatarId] ?? []
+        // Cap per-avatar history at 100 messages to avoid unbounded storage
+        const capped = existing.length >= 100 ? existing.slice(-99) : existing
+        return {
+          messagesByAvatar: {
+            ...state.messagesByAvatar,
+            [avatarId]: [
+              ...capped,
+              { ...message, id: Date.now().toString(), timestamp: new Date().toISOString() },
+            ],
+          },
+        }
+      }),
+      clearMessages: (avatarId) => set((state) => ({
+        messagesByAvatar: { ...state.messagesByAvatar, [avatarId]: [] },
+      })),
+
+      // Assignment state
+      assignments: [],
+      addAssignment: (assignment) => set((state) => ({
+        assignments: [...state.assignments, {
+          ...assignment,
+          id: Date.now().toString(),
+          createdAt: new Date().toISOString(),
+        }],
+      })),
+      updateAssignment: (id, updates) => set((state) => ({
+        assignments: state.assignments.map(a => a.id === id ? { ...a, ...updates } : a),
+      })),
+
+      // Progress tracking
+      progress: [],
+      updateProgress: (userId, updates) => set((state) => ({
+        progress: state.progress.map(p => p.userId === userId ? { ...p, ...updates } : p),
+      })),
+
+      // UI state
+      isChatOpen: false,
+      setIsChatOpen: (open) => set({ isChatOpen: open }),
+
+      selectedAvatar: 'owl',
+      setSelectedAvatar: (avatar) => set({ selectedAvatar: avatar }),
+    }),
+    {
+      name: 'buddy-app-store',
+      // Only persist the data that should survive a refresh
+      partialize: (state) => ({
+        messagesByAvatar: state.messagesByAvatar,
+        assignments: state.assignments,
+        selectedAvatar: state.selectedAvatar,
+        currentUser: state.currentUser,
+      }),
     }
-  }),
-  clearMessages: (avatarId) => set((state) => ({
-    messagesByAvatar: { ...state.messagesByAvatar, [avatarId]: [] }
-  })),
+  )
+)
 
-  // Assignment state
-  assignments: [],
-  addAssignment: (assignment) => set((state) => ({
-    assignments: [...state.assignments, {
-      ...assignment,
-      id: Date.now().toString(),
-      createdAt: new Date()
-    }]
-  })),
-  updateAssignment: (id, updates) => set((state) => ({
-    assignments: state.assignments.map(a =>
-      a.id === id ? { ...a, ...updates } : a
-    )
-  })),
-
-  // Progress tracking
-  progress: [],
-  updateProgress: (userId, updates) => set((state) => ({
-    progress: state.progress.map(p =>
-      p.userId === userId ? { ...p, ...updates } : p
-    )
-  })),
-
-  // UI state
-  isChatOpen: false,
-  setIsChatOpen: (open) => set({ isChatOpen: open }),
-
-  selectedAvatar: 'owl',
-  setSelectedAvatar: (avatar) => set({ selectedAvatar: avatar }),
-}))

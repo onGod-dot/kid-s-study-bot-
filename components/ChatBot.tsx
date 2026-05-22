@@ -79,38 +79,52 @@ function FormattedMessage({ text }: { text: string }) {
   )
 }
 
-// Handles **bold** and *italic* inline
+// Handles **bold** and *italic* inline — order matters: match ** before *
 function InlineFormat({ text }: { text: string }) {
-  // Split on **bold** or *italic* markers
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+  // Split on **bold** first, then *italic* — avoids partial asterisk matches
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
   return (
     <>
       {parts.map((part, i) => {
         if (part.startsWith('**') && part.endsWith('**')) {
           return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
         }
-        if (part.startsWith('*') && part.endsWith('*')) {
-          return <em key={i} className="text-white/80 italic">{part.slice(1, -1)}</em>
-        }
-        return <span key={i}>{part}</span>
+        // Now handle *italic* within non-bold segments
+        const subParts = part.split(/(\*[^*]+\*)/g)
+        return (
+          <span key={i}>
+            {subParts.map((sub, j) => {
+              if (sub.startsWith('*') && sub.endsWith('*') && sub.length > 2) {
+                return <em key={j} className="text-white/80 italic">{sub.slice(1, -1)}</em>
+              }
+              return <span key={j}>{sub}</span>
+            })}
+          </span>
+        )
       })}
     </>
   )
 }
 
-// ── Typewriter that feeds into FormattedMessage ───────────────────────────────
-function TypewriterFormatted({ text, speed = 18 }: { text: string; speed?: number }) {
-  const [displayed, setDisplayed] = useState('')
+// ── Typewriter — word-by-word so markdown tokens stay intact ─────────────────
+// Character-by-character streaming breaks **bold** mid-token, showing raw asterisks.
+// Word-by-word keeps tokens whole so InlineFormat always sees complete markers.
+function TypewriterFormatted({ text, speed = 60 }: { text: string; speed?: number }) {
+  const words = text.split(' ')
+  const [count, setCount] = useState(0)
+
   useEffect(() => {
-    setDisplayed('')
+    setCount(0)
     let i = 0
     const timer = setInterval(() => {
       i++
-      setDisplayed(text.slice(0, i))
-      if (i >= text.length) clearInterval(timer)
+      setCount(i)
+      if (i >= words.length) clearInterval(timer)
     }, speed)
     return () => clearInterval(timer)
-  }, [text, speed])
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const displayed = words.slice(0, count).join(' ')
   return <FormattedMessage text={displayed} />
 }
 
@@ -388,7 +402,7 @@ RULES:
                 {/* Actions row */}
                 {message.role === 'assistant' && (
                   <div className="flex items-center gap-1 mt-1 px-1">
-                    <span className="text-white/25 text-[10px]">{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-white/25 text-[10px]">{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     <div className="flex items-center gap-0.5 ml-auto">
                       {!message.imageUrl && (
                         <button
