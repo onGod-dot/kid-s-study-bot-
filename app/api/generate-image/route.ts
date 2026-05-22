@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const API_KEY = process.env.TOGETHER_API_KEY ?? ''
+const API_KEY = process.env.TOGETHER_API_KEY ?? 'ab85f36a6259ab35ff4f2433e1b252e893e4a4ea4577580b60e82b47d1be5abc'
 
 // Kids  → FLUX.1-schnell: fast, colourful, cartoon-friendly (4 steps)
 // Teens → FLUX.1-dev:     realistic, photographic quality  (28 steps)
@@ -20,10 +20,6 @@ const MODELS = {
 } as const
 
 export async function POST(req: NextRequest) {
-  if (!API_KEY) {
-    return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
-  }
-
   try {
     const body = await req.json()
     const { prompt, ageGroup = 'kids' } = body
@@ -48,6 +44,7 @@ export async function POST(req: NextRequest) {
         height: 768,
         steps: config.steps,
         n: 1,
+        ...(ageGroup === 'teens' && { guidance: 3.5 }),
       }),
     })
 
