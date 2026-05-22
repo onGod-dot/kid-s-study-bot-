@@ -14,7 +14,6 @@ export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  // Store as ISO string for JSON serialisation; convert to Date on read
   timestamp: string
   audioUrl?: string
   imageUrl?: string
@@ -38,27 +37,36 @@ export interface Progress {
   lastActivity: string
 }
 
+export interface GameBadge {
+  id: string           // e.g. "kids-bubble-1"
+  gameId: string       // e.g. "bubble"
+  gameTitle: string
+  emoji: string
+  score: number
+  earnedAt: string
+  ageGroup: 'kids' | 'teens'
+}
+
 interface AppState {
-  // User state
   currentUser: User | null
   setCurrentUser: (user: User) => void
 
-  // Per-avatar chat state
   messagesByAvatar: Record<string, ChatMessage[]>
   addMessage: (avatarId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => void
   clearMessages: (avatarId: string) => void
   getMessages: (avatarId: string) => ChatMessage[]
 
-  // Assignment state
   assignments: Assignment[]
   addAssignment: (assignment: Omit<Assignment, 'id' | 'createdAt'>) => void
   updateAssignment: (id: string, updates: Partial<Assignment>) => void
 
-  // Progress tracking
   progress: Progress[]
   updateProgress: (userId: string, updates: Partial<Progress>) => void
 
-  // UI state
+  // Badges earned from games
+  badges: GameBadge[]
+  addBadge: (badge: Omit<GameBadge, 'id' | 'earnedAt'>) => void
+
   isChatOpen: boolean
   setIsChatOpen: (open: boolean) => void
 
@@ -69,16 +77,13 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      // User state
       currentUser: null,
       setCurrentUser: (user) => set({ currentUser: user }),
 
-      // Per-avatar chat state
       messagesByAvatar: {},
       getMessages: (avatarId) => get().messagesByAvatar[avatarId] ?? [],
       addMessage: (avatarId, message) => set((state) => {
         const existing = state.messagesByAvatar[avatarId] ?? []
-        // Cap per-avatar history at 100 messages to avoid unbounded storage
         const capped = existing.length >= 100 ? existing.slice(-99) : existing
         return {
           messagesByAvatar: {
@@ -94,7 +99,6 @@ export const useAppStore = create<AppState>()(
         messagesByAvatar: { ...state.messagesByAvatar, [avatarId]: [] },
       })),
 
-      // Assignment state
       assignments: [],
       addAssignment: (assignment) => set((state) => ({
         assignments: [...state.assignments, {
@@ -107,13 +111,19 @@ export const useAppStore = create<AppState>()(
         assignments: state.assignments.map(a => a.id === id ? { ...a, ...updates } : a),
       })),
 
-      // Progress tracking
       progress: [],
       updateProgress: (userId, updates) => set((state) => ({
         progress: state.progress.map(p => p.userId === userId ? { ...p, ...updates } : p),
       })),
 
-      // UI state
+      badges: [],
+      addBadge: (badge) => set((state) => ({
+        badges: [
+          ...state.badges,
+          { ...badge, id: `${badge.gameId}-${Date.now()}`, earnedAt: new Date().toISOString() },
+        ],
+      })),
+
       isChatOpen: false,
       setIsChatOpen: (open) => set({ isChatOpen: open }),
 
@@ -122,12 +132,12 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'buddy-app-store',
-      // Only persist the data that should survive a refresh
       partialize: (state) => ({
         messagesByAvatar: state.messagesByAvatar,
         assignments: state.assignments,
         selectedAvatar: state.selectedAvatar,
         currentUser: state.currentUser,
+        badges: state.badges,
       }),
     }
   )
