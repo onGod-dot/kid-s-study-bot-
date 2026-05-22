@@ -27,11 +27,11 @@ export class TogetherAIService {
   }
 
   // Image generation via server-side API route
-  static async generateImage(prompt: string): Promise<string> {
+  static async generateImage(prompt: string, ageGroup: 'kids' | 'teens' = 'kids'): Promise<string> {
     const response = await fetch('/api/generate-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, ageGroup }),
     })
 
     if (!response.ok) {

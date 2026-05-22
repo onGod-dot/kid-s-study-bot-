@@ -2,20 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const API_KEY = process.env.TOGETHER_API_KEY ?? ''
 
+// Kids  → FLUX.1-schnell: fast, colourful, cartoon-friendly (4 steps)
+// Teens → FLUX.1-dev:     realistic, photographic quality  (28 steps)
+const MODELS = {
+  kids: {
+    id: 'black-forest-labs/FLUX.1-schnell',
+    steps: 4,
+    buildPrompt: (subject: string) =>
+      `Educational illustration for children: ${subject}. Colorful, friendly, cartoon style, safe for kids, clear and simple.`,
+  },
+  teens: {
+    id: 'black-forest-labs/FLUX.1-dev',
+    steps: 28,
+    buildPrompt: (subject: string) =>
+      `Photorealistic educational image: ${subject}. High detail, natural lighting, accurate and informative, suitable for teenagers, no text overlays.`,
+  },
+} as const
+
 export async function POST(req: NextRequest) {
   if (!API_KEY) {
     return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
   }
 
   try {
-    const { prompt } = await req.json()
+    const body = await req.json()
+    const { prompt, ageGroup = 'kids' } = body
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json({ error: 'Invalid prompt' }, { status: 400 })
     }
 
-    // Make the prompt kid-friendly and educational
-    const safePrompt = `Educational illustration for children: ${prompt}. Colorful, friendly, cartoon style, safe for kids, clear and simple.`
+    const config = MODELS[ageGroup as keyof typeof MODELS] ?? MODELS.kids
+    const safePrompt = config.buildPrompt(prompt)
 
     const response = await fetch('https://api.together.xyz/v1/images/generations', {
       method: 'POST',
@@ -24,11 +42,11 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'black-forest-labs/FLUX.1-schnell',
+        model: config.id,
         prompt: safePrompt,
-        width: 512,
-        height: 512,
-        steps: 4,
+        width: 768,
+        height: 768,
+        steps: config.steps,
         n: 1,
       }),
     })
@@ -37,7 +55,6 @@ export async function POST(req: NextRequest) {
       let errMsg = response.statusText
       try {
         const err = await response.json()
-        // Together AI can return error in different shapes
         errMsg = err?.error?.message || err?.error || err?.message || errMsg
       } catch {}
       console.error('Image API error response:', response.status, errMsg)
@@ -59,3 +76,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
+
