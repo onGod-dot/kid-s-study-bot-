@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { Upload, Camera, FileText, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Upload, Camera, FileText, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { useAppStore } from '@/lib/store'
 import { TogetherAIService } from '@/lib/together-ai'
@@ -14,471 +14,478 @@ interface AssignmentHelperProps {
   avatarId: string
 }
 
+// ── Shared markdown renderer (same logic as ChatBot) ─────────────────────────
+function FormattedContent({ text }: { text: string }) {
+  const lines = text.split('\n').filter(l => l.trim() !== '')
+
+  return (
+    <div className="space-y-2">
+      {lines.map((line, i) => {
+        const trimmed = line.trim()
+
+        // Numbered list  e.g. "1. Something"
+        const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
+        if (numberedMatch) {
+          return (
+            <div key={i} className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-[11px] font-bold text-white mt-0.5">
+                {numberedMatch[1]}
+              </span>
+              <span className="text-white/90 text-sm leading-relaxed">
+                <InlineFormat text={numberedMatch[2]} />
+              </span>
+            </div>
+          )
+        }
+
+        // Bullet list  e.g. "- item" or "* item"
+        const bulletMatch = trimmed.match(/^[-*•]\s+(.+)/)
+        if (bulletMatch) {
+          return (
+            <div key={i} className="flex items-start gap-3">
+              <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-white/50 mt-2.5" />
+              <span className="text-white/90 text-sm leading-relaxed">
+                <InlineFormat text={bulletMatch[1]} />
+              </span>
+            </div>
+          )
+        }
+
+        // Heading  e.g. "## Title" or "### Title"
+        const headingMatch = trimmed.match(/^#{1,3}\s+(.+)/)
+        if (headingMatch) {
+          return (
+            <p key={i} className="text-white font-bold text-sm mt-3 mb-1">
+              {headingMatch[1]}
+            </p>
+          )
+        }
+
+        // Regular paragraph
+        return (
+          <p key={i} className="text-white/90 text-sm leading-relaxed">
+            <InlineFormat text={trimmed} />
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+// Handles **bold** first, then *italic* — prevents partial asterisk matches
+function InlineFormat({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i} className="text-white font-semibold">{part.slice(2, -2)}</strong>
+        }
+        const subParts = part.split(/(\*[^*]+\*)/g)
+        return (
+          <span key={i}>
+            {subParts.map((sub, j) => {
+              if (sub.startsWith('*') && sub.endsWith('*') && sub.length > 2) {
+                return <em key={j} className="text-white/80 italic">{sub.slice(1, -1)}</em>
+              }
+              return <span key={j}>{sub}</span>
+            })}
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+// ── Step card — collapsible ───────────────────────────────────────────────────
+function StepCard({
+  number, title, content, isActive, accent,
+}: {
+  number: number
+  title: string
+  content: string
+  isActive: boolean
+  accent: string
+}) {
+  const [open, setOpen] = useState(isActive)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: number * 0.05 }}
+      className="bg-white/5 border border-white/10 rounded-xl overflow-hidden"
+    >
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/5 transition-colors"
+      >
+        <span className={`flex-shrink-0 w-7 h-7 rounded-full ${accent} flex items-center justify-center text-xs font-bold text-white`}>
+          {number}
+        </span>
+        <span className="flex-1 text-white text-sm font-semibold leading-snug">{title}</span>
+        {open
+          ? <ChevronUp className="w-4 h-4 text-white/40 flex-shrink-0" />
+          : <ChevronDown className="w-4 h-4 text-white/40 flex-shrink-0" />
+        }
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-1 border-t border-white/10">
+              <FormattedContent text={content} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+
+// ── Parse AI response into titled steps ──────────────────────────────────────
+// Handles: "1. Title\ncontent", "**Step 1: Title**\ncontent", "## Title\ncontent"
+function parseSteps(text: string): { title: string; content: string }[] {
+  // Split on numbered lines or bold step headers
+  const chunks = text.split(/(?=\n?\s*(?:\d+\.\s|\*\*Step\s+\d+|\#{1,3}\s))/i).filter(c => c.trim())
+
+  if (chunks.length <= 1) {
+    // Fallback: split on double newlines as paragraphs
+    const paras = text.split(/\n{2,}/).filter(p => p.trim())
+    if (paras.length <= 1) return [{ title: 'Solution', content: text.trim() }]
+    return paras.map((p, i) => {
+      const firstLine = p.split('\n')[0].replace(/^[#*\d.\s]+/, '').trim()
+      return { title: firstLine || `Part ${i + 1}`, content: p.trim() }
+    })
+  }
+
+  return chunks.map(chunk => {
+    const lines = chunk.trim().split('\n')
+    const firstLine = lines[0]
+      .replace(/^\d+\.\s*/, '')          // remove "1. "
+      .replace(/^\*\*(.+?)\*\*$/, '$1')  // remove **...**
+      .replace(/^#{1,3}\s*/, '')          // remove ###
+      .trim()
+    const title = firstLine || `Step ${chunks.indexOf(chunk) + 1}`
+    const content = lines.slice(1).join('\n').trim() || firstLine
+    return { title, content: content || chunk.trim() }
+  })
+}
+
 export default function AssignmentHelper({ theme, ageGroup, avatarId }: AssignmentHelperProps) {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [assignmentHelp, setAssignmentHelp] = useState<string>('')
-  const [extractedText, setExtractedText] = useState<string>('')
-  const [stepByStepGuide, setStepByStepGuide] = useState<string[]>([])
-  const [currentStep, setCurrentStep] = useState(0)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [textInput, setTextInput] = useState<string>('')
+  const [steps, setSteps] = useState<{ title: string; content: string }[]>([])
+  const [fullResponse, setFullResponse] = useState('')
+  const [textInput, setTextInput] = useState('')
   const [inputMode, setInputMode] = useState<'upload' | 'text'>('upload')
-  const { assignments, addAssignment, updateAssignment, addMessage } = useAppStore()
+  const [showFull, setShowFull] = useState(false)
+  const { assignments, addAssignment, addMessage } = useAppStore()
 
   const processAssignment = async (textContent: string, fileName?: string) => {
     setIsProcessing(true)
-    setIsAnalyzing(true)
-    
+    setSteps([])
+    setFullResponse('')
+
     try {
-      // Step 1: Set the extracted text
-      setExtractedText(textContent)
-      toast.success('Assignment content ready!', { id: 'extract' })
+      toast.loading('Analyzing your assignment...', { id: 'analyze' })
 
-      // Step 2: Analyze the assignment and create step-by-step guide
-      toast.loading('Analyzing assignment and creating learning guide...', { id: 'analyze' })
-      
       const systemPrompt = ageGroup === 'kids'
-        ? `You are a friendly, patient tutor helping a child (ages 5-12) with their homework. 
-           - Look at this assignment text and create a step-by-step learning guide
-           - Use simple, encouraging language
-           - Break down complex problems into smaller, manageable steps
-           - Ask guiding questions to help them think
-           - Use examples and analogies they can relate to
-           - Don't give direct answers, but guide them to discover the solution
-           - Make learning fun and engaging
-           - Format your response as a clear step-by-step guide with numbered steps`
-        : `You are an advanced tutor helping a teenager (ages 13-18) with their assignment.
-           - Analyze this assignment text and create a comprehensive step-by-step guide
-           - Challenge their thinking with probing questions
-           - Provide structured approaches to problem-solving
-           - Encourage critical thinking and deeper understanding
-           - Suggest multiple solution paths
-           - Connect concepts to real-world applications
-           - Format your response as a detailed step-by-step guide with numbered steps`
+        ? `You are a friendly tutor helping a child (ages 5–12) with homework.
+RULES:
+- Give the FULL answer AND show every step to get there.
+- Use simple words a child understands.
+- Number each step clearly: "1. Step title\nExplanation here."
+- Keep each step short — 2-3 sentences max.
+- Use 1 fun emoji per step.
+- After the steps, give the final answer clearly labelled "✅ Answer:".
+- No markdown asterisks in plain text — use numbered steps only.`
+        : `You are an expert tutor helping a teenager (ages 13–18) with their assignment.
+RULES:
+- Give the COMPLETE solution with every step shown.
+- Number each step: "1. Step title\nDetailed explanation."
+- Use **bold** for key terms and formulas.
+- Show working/calculations explicitly.
+- After all steps, give the final answer clearly labelled "✅ Final Answer:".
+- Be precise and thorough — teens need to understand the method, not just the result.`
 
-      const helpResponse = await TogetherAIService.chatCompletion([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Please analyze this assignment and create a step-by-step learning guide:\n\n${textContent}` }
-      ])
+      const response = await TogetherAIService.chatCompletion(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Solve this assignment step by step and show the full answer:\n\n${textContent}` },
+        ],
+        undefined,
+        800  // higher token limit for full solutions
+      )
 
-      setAssignmentHelp(helpResponse || 'I can help you with this assignment! Let me analyze it and provide some guidance.')
-      
-      // Step 3: Break down the response into individual steps
-      const steps = helpResponse
-        .split(/\d+\.\s*/)
-        .filter(step => step.trim().length > 0)
-        .map(step => step.trim())
-      
-      setStepByStepGuide(steps)
-      setCurrentStep(0)
+      const parsed = parseSteps(response)
+      setSteps(parsed)
+      setFullResponse(response)
 
-      // Add to assignments
       addAssignment({
         title: fileName || `Assignment ${assignments.length + 1}`,
         subject: 'General',
         description: textContent,
         imageUrl: uploadedImage || undefined,
-        status: 'in_progress'
+        status: 'in_progress',
       })
 
-      // Add a message to the chat about the assignment help
       addMessage(avatarId, {
         role: 'assistant',
-        content: `I've analyzed your assignment! I found ${steps.length} steps to help you work through it. Let's start with the first step and work through it together! 🎯`
+        content: `I've solved your assignment in ${parsed.length} steps — check the Homework tab! 🎯`,
       })
 
-      toast.success('Assignment analyzed successfully! Ready to start learning!', { id: 'analyze' })
+      toast.success('Done! Check the steps below.', { id: 'analyze' })
     } catch (error) {
       console.error('Assignment processing error:', error)
-      toast.error('Failed to process assignment. Please try again.')
+      toast.error('Failed to analyze assignment. Please try again.', { id: 'analyze' })
     } finally {
       setIsProcessing(false)
-      setIsAnalyzing(false)
     }
   }
 
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (!file) return
-
     setUploadedFile(file)
-    
+
     try {
-      // Handle different file types
       if (file.type.startsWith('image/')) {
-        // For images, use OCR
-        toast.loading('Extracting text from your assignment image...', { id: 'extract' })
-        
-        // Convert file to base64 for display
+        toast.loading('Reading your assignment image...', { id: 'extract' })
         const reader = new FileReader()
-        reader.onload = (e) => {
-          setUploadedImage(e.target?.result as string)
-        }
+        reader.onload = (e) => setUploadedImage(e.target?.result as string)
         reader.readAsDataURL(file)
-
-        const extractedText = await TogetherAIService.speechToText(file)
-        await processAssignment(extractedText, file.name)
-      } else if (file.type === 'application/pdf') {
-        // For PDFs, we'll need to extract text (this is a simplified approach)
-        toast.loading('Processing PDF document...', { id: 'extract' })
-        
-        // Convert file to base64 for display
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setUploadedImage(e.target?.result as string)
-        }
-        reader.readAsDataURL(file)
-
-        // For now, we'll use a placeholder - in a real implementation, you'd use a PDF text extraction library
-        const extractedText = `PDF Document: ${file.name}\n\n[PDF content would be extracted here. For now, please type your assignment in the text input below.]`
-        await processAssignment(extractedText, file.name)
+        const extracted = await TogetherAIService.speechToText(file)
+        toast.dismiss('extract')
+        await processAssignment(extracted, file.name)
       } else if (file.type.includes('text') || file.type.includes('document')) {
-        // For text files and documents
-        toast.loading('Reading document content...', { id: 'extract' })
-        
+        toast.loading('Reading document...', { id: 'extract' })
         const reader = new FileReader()
         reader.onload = (e) => {
-          const content = e.target?.result as string
-          processAssignment(content, file.name)
+          toast.dismiss('extract')
+          processAssignment(e.target?.result as string, file.name)
         }
         reader.readAsText(file)
+      } else if (file.type === 'application/pdf') {
+        toast.error('PDF support coming soon — please type your assignment instead.')
       } else {
-        toast.error('Unsupported file format. Please try an image, PDF, or text document.')
+        toast.error('Unsupported format. Try an image or text file.')
       }
-    } catch (error) {
-      console.error('File processing error:', error)
-      toast.error('Failed to process file. Please try again.')
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to read file. Please try again.')
     }
   }
 
   const handleTextSubmit = async () => {
-    if (!textInput.trim()) {
-      toast.error('Please enter your assignment text.')
-      return
-    }
-
+    if (!textInput.trim()) { toast.error('Please enter your assignment.'); return }
     await processAssignment(textInput.trim(), 'Typed Assignment')
     setTextInput('')
+  }
+
+  const reset = () => {
+    setSteps([])
+    setFullResponse('')
+    setUploadedImage(null)
+    setUploadedFile(null)
+    setShowFull(false)
   }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'],
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.bmp', '.webp'],
       'application/pdf': ['.pdf'],
       'application/msword': ['.doc'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
-      'application/rtf': ['.rtf']
     },
-    multiple: false
+    multiple: false,
   })
 
-  const getThemeClasses = () => {
-    if (theme === 'forest') {
-      return {
+  const tc = theme === 'forest'
+    ? {
         container: 'bg-green-500/10 border-green-500/20',
         button: 'bg-green-500 hover:bg-green-600 text-white',
-        input: 'bg-green-500/10 border-green-500/30 text-white placeholder-green-200',
-        dropzone: isDragActive 
-          ? 'border-green-400 bg-green-500/20' 
-          : 'border-green-500/30 bg-green-500/5'
+        input: 'bg-green-500/10 border-green-500/30 text-white placeholder-green-200/60',
+        dropzone: isDragActive ? 'border-green-400 bg-green-500/20' : 'border-green-500/30 bg-green-500/5',
+        accent: 'bg-emerald-500',
+        accentText: 'text-emerald-400',
       }
-    } else {
-      return {
+    : {
         container: 'bg-blue-500/10 border-blue-500/20',
         button: 'bg-blue-500 hover:bg-blue-600 text-white',
-        input: 'bg-blue-500/10 border-blue-500/30 text-white placeholder-blue-200',
-        dropzone: isDragActive 
-          ? 'border-blue-400 bg-blue-500/20' 
-          : 'border-blue-500/30 bg-blue-500/5'
+        input: 'bg-blue-500/10 border-blue-500/30 text-white placeholder-blue-200/60',
+        dropzone: isDragActive ? 'border-blue-400 bg-blue-500/20' : 'border-blue-500/30 bg-blue-500/5',
+        accent: 'bg-blue-500',
+        accentText: 'text-blue-400',
       }
-    }
-  }
-
-  const themeClasses = getThemeClasses()
 
   return (
-    <div className="space-y-6">
-      {/* Input Mode Selection */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
-      >
-        <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
-          <Camera className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-          Submit Your Assignment
-        </h3>
-        
-        {/* Mode Toggle */}
-        <div className="flex space-x-2 mb-6">
-          <button
-            onClick={() => setInputMode('upload')}
-            className={`px-4 py-2 rounded-lg transition-all ${
-              inputMode === 'upload'
-                ? `${themeClasses.button}`
-                : 'bg-white/10 text-white hover:bg-white/20'
-            }`}
-          >
-            📁 Upload File
-          </button>
-          <button
-            onClick={() => setInputMode('text')}
-            className={`px-4 py-2 rounded-lg transition-all ${
-              inputMode === 'text'
-                ? `${themeClasses.button}`
-                : 'bg-white/10 text-white hover:bg-white/20'
-            }`}
-          >
-            ✍️ Type Assignment
-          </button>
+    <div className="space-y-5">
+
+      {/* ── Input card ── */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-2xl border backdrop-blur-sm ${tc.container} p-4 sm:p-6`}>
+
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Camera className="w-5 h-5" />
+            {ageGroup === 'kids' ? 'Homework Helper' : 'Assignment Solver'}
+          </h3>
+          {(steps.length > 0 || fullResponse) && (
+            <button onClick={reset}
+              className="flex items-center gap-1 text-white/40 hover:text-white/80 text-xs px-2 py-1 rounded-lg hover:bg-white/10 transition-all">
+              <RotateCcw className="w-3 h-3" /> New
+            </button>
+          )}
         </div>
 
-        {/* Upload Mode */}
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-5">
+          {(['upload', 'text'] as const).map(mode => (
+            <button key={mode} onClick={() => setInputMode(mode)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                inputMode === mode ? tc.button : 'bg-white/10 text-white hover:bg-white/20'
+              }`}>
+              {mode === 'upload' ? '📁 Upload File' : '✍️ Type It'}
+            </button>
+          ))}
+        </div>
+
+        {/* Upload zone */}
         {inputMode === 'upload' && (
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${themeClasses.dropzone}`}
-          >
+          <div {...getRootProps()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${tc.dropzone}`}>
             <input {...getInputProps()} />
             {isProcessing ? (
-              <div className="flex flex-col items-center space-y-4">
-                <Loader2 className="w-12 h-12 text-white animate-spin" />
-                <div className="text-center">
-                  <p className="text-white font-medium">
-                    {isAnalyzing ? 'Analyzing your assignment...' : 'Processing your assignment...'}
-                  </p>
-                  <p className="text-white/60 text-sm mt-2">
-                    {isAnalyzing ? 'Creating step-by-step learning guide' : 'Extracting text from file'}
-                  </p>
-                </div>
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-10 h-10 text-white animate-spin" />
+                <p className="text-white font-medium">Analyzing your assignment...</p>
+                <p className="text-white/50 text-sm">Building step-by-step solution</p>
               </div>
             ) : (
-              <div className="flex flex-col items-center space-y-4">
-                <Upload className="w-12 h-12 text-white/60" />
-                <div>
-                  <p className="text-white font-medium">
-                    {isDragActive ? 'Drop your assignment here' : 'Drag & drop your assignment here'}
-                  </p>
-                  <p className="text-white/60 text-sm mt-2">
-                    Supports: Images, PDFs, Word docs, text files
-                  </p>
-                  <p className="text-white/40 text-xs mt-1">
-                    or click to browse files
-                  </p>
-                </div>
+              <div className="flex flex-col items-center gap-3">
+                <Upload className="w-10 h-10 text-white/40" />
+                <p className="text-white font-medium">
+                  {isDragActive ? 'Drop it here!' : 'Drag & drop your assignment'}
+                </p>
+                <p className="text-white/40 text-xs">Images, Word docs, text files · or click to browse</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Text Input Mode */}
+        {/* Text input */}
         {inputMode === 'text' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-white font-medium mb-2">
-                Type your assignment here:
-              </label>
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Paste or type your assignment text here..."
-                className={`w-full h-32 px-4 py-3 rounded-lg border ${themeClasses.input} focus:outline-none focus:ring-2 focus:ring-white/20 resize-none`}
-                disabled={isProcessing}
-              />
-            </div>
-            <button
-              onClick={handleTextSubmit}
+          <div className="space-y-3">
+            <textarea
+              value={textInput}
+              onChange={e => setTextInput(e.target.value)}
+              placeholder={ageGroup === 'kids'
+                ? 'Type your homework question here...'
+                : 'Paste your assignment or question here...'}
+              className={`w-full h-36 px-4 py-3 rounded-xl border ${tc.input} focus:outline-none focus:ring-2 focus:ring-white/20 resize-none text-sm`}
+              disabled={isProcessing}
+            />
+            <button onClick={handleTextSubmit}
               disabled={!textInput.trim() || isProcessing}
-              className={`px-6 py-3 rounded-lg ${themeClasses.button} disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              {isProcessing ? (
-                <div className="flex items-center space-x-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Processing...</span>
-                </div>
-              ) : (
-                'Analyze Assignment'
-              )}
+              className={`w-full py-3 rounded-xl font-semibold ${tc.button} disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}>
+              {isProcessing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Solving...</>
+                : '🔍 Solve Assignment'}
             </button>
           </div>
         )}
 
-        {/* File Preview */}
+        {/* Uploaded image preview */}
         {uploadedImage && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mt-4"
-          >
-            <img 
-              src={uploadedImage} 
-              alt="Uploaded assignment" 
-              className="max-w-full h-auto rounded-lg border border-white/20"
-            />
-          </motion.div>
-        )}
-
-        {/* File Info */}
-        {uploadedFile && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 p-3 bg-white/5 rounded-lg border border-white/10"
-          >
-            <p className="text-white text-sm">
-              <span className="font-medium">File:</span> {uploadedFile.name}
-            </p>
-            <p className="text-white/60 text-xs">
-              <span className="font-medium">Type:</span> {uploadedFile.type}
-            </p>
-          </motion.div>
+          <motion.img initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            src={uploadedImage} alt="Uploaded assignment"
+            className="mt-4 max-w-full h-auto rounded-xl border border-white/20" />
         )}
       </motion.div>
 
-      {/* Extracted Text Section */}
-      {extractedText && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
-        >
-          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
-            <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-            Extracted Assignment Text
-          </h3>
-          
-          <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-            <p className="text-white leading-relaxed text-sm">{extractedText}</p>
-          </div>
-        </motion.div>
-      )}
+      {/* ── Step-by-step solution ── */}
+      {steps.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl border backdrop-blur-sm ${tc.container} p-4 sm:p-6`}>
 
-      {/* Step-by-Step Guide */}
-      {stepByStepGuide.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
-        >
-          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
-            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-            Step-by-Step Learning Guide
+          <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <CheckCircle className="w-5 h-5" />
+            {ageGroup === 'kids' ? '📚 Here\'s How to Solve It' : '📐 Step-by-Step Solution'}
           </h3>
-          
-          <div className="bg-white/5 rounded-lg p-4 border border-white/10 mb-4">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-white font-medium">
-                Step {currentStep + 1} of {stepByStepGuide.length}
-              </span>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                  disabled={currentStep === 0}
-                  className="px-3 py-1 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  ← Previous
-                </button>
-                <button
-                  onClick={() => setCurrentStep(Math.min(stepByStepGuide.length - 1, currentStep + 1))}
-                  disabled={currentStep === stepByStepGuide.length - 1}
-                  className="px-3 py-1 rounded bg-white/10 text-white hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-            
-            <div className="bg-white/10 rounded-lg p-4 border border-white/20">
-              <p className="text-white leading-relaxed">
-                {stepByStepGuide[currentStep]}
-              </p>
-            </div>
-          </div>
 
-          {/* Progress indicator */}
-          <div className="flex space-x-2 justify-center">
-            {stepByStepGuide.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setCurrentStep(index)}
-                className={`w-3 h-3 rounded-full transition-all ${
-                  index === currentStep 
-                    ? 'bg-white scale-125' 
-                    : index < currentStep 
-                      ? 'bg-white/60' 
-                      : 'bg-white/20'
-                }`}
+          <div className="space-y-2">
+            {steps.map((step, i) => (
+              <StepCard
+                key={i}
+                number={i + 1}
+                title={step.title}
+                content={step.content}
+                isActive={i === 0}
+                accent={tc.accent}
               />
             ))}
           </div>
+
+          {/* Toggle full raw response */}
+          <button
+            onClick={() => setShowFull(f => !f)}
+            className="mt-4 flex items-center gap-1.5 text-white/40 hover:text-white/70 text-xs transition-colors">
+            {showFull ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {showFull ? 'Hide full response' : 'Show full response'}
+          </button>
+
+          <AnimatePresence>
+            {showFull && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                className="overflow-hidden mt-3">
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <FormattedContent text={fullResponse} />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       )}
 
-      {/* Full Guide Section */}
-      {assignmentHelp && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
-        >
-          <h3 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center">
-            <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
-            Complete Learning Guide
-          </h3>
-          
-          <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-            <p className="text-white leading-relaxed whitespace-pre-line">{assignmentHelp}</p>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Assignment List */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border backdrop-blur-sm ${themeClasses.container} p-4 sm:p-6`}
-      >
-        <h3 className="text-lg sm:text-xl font-bold text-white mb-4">Your Assignments</h3>
-        
-        {assignments.length === 0 ? (
-          <p className="text-white/60 text-center py-8">No assignments yet. Upload one to get started!</p>
-        ) : (
-          <div className="space-y-3">
-            {assignments.map((assignment) => (
-              <div
-                key={assignment.id}
-                className="bg-white/5 rounded-lg p-4 border border-white/10"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-white font-medium">{assignment.title}</h4>
-                    <p className="text-white/60 text-sm">{assignment.subject}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    {assignment.status === 'completed' ? (
-                      <CheckCircle className="w-5 h-5 text-green-400" />
-                    ) : assignment.status === 'in_progress' ? (
-                      <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-red-400" />
-                    )}
-                    <span className={`text-sm ${
-                      assignment.status === 'completed' ? 'text-green-400' :
-                      assignment.status === 'in_progress' ? 'text-yellow-400' : 'text-red-400'
-                    }`}>
-                      {assignment.status.replace('_', ' ')}
-                    </span>
-                  </div>
+      {/* ── Assignment history ── */}
+      {assignments.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-2xl border backdrop-blur-sm ${tc.container} p-4 sm:p-6`}>
+          <h3 className="text-base font-bold text-white mb-3">Recent Assignments</h3>
+          <div className="space-y-2">
+            {assignments.slice(-5).reverse().map(a => (
+              <div key={a.id} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2.5 border border-white/10">
+                <div>
+                  <p className="text-white text-sm font-medium">{a.title}</p>
+                  <p className="text-white/40 text-xs">{a.subject}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {a.status === 'completed'
+                    ? <CheckCircle className="w-4 h-4 text-green-400" />
+                    : a.status === 'in_progress'
+                    ? <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />
+                    : <XCircle className="w-4 h-4 text-red-400" />}
+                  <span className={`text-xs ${
+                    a.status === 'completed' ? 'text-green-400' :
+                    a.status === 'in_progress' ? 'text-yellow-400' : 'text-red-400'
+                  }`}>{a.status.replace('_', ' ')}</span>
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </motion.div>
+        </motion.div>
+      )}
     </div>
   )
 }

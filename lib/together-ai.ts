@@ -8,12 +8,13 @@ export class TogetherAIService {
   // Chat completion via server-side API route (avoids CORS + key exposure)
   static async chatCompletion(
     messages: ChatMessage[],
-    model: string = 'meta-llama/Llama-3.3-70B-Instruct-Turbo'
+    model: string = 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    maxTokens?: number
   ): Promise<string> {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model }),
+      body: JSON.stringify({ messages, model, maxTokens }),
     })
 
     if (!response.ok) {

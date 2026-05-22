@@ -5,7 +5,7 @@ const API_KEY = process.env.TOGETHER_API_KEY ?? 'ab85f36a6259ab35ff4f2433e1b252e
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, model = 'meta-llama/Llama-3.3-70B-Instruct-Turbo' } = await req.json()
+    const { messages, model = 'meta-llama/Llama-3.3-70B-Instruct-Turbo', maxTokens } = await req.json()
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Invalid messages format' }, { status: 400 })
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const response = await together.chat.completions.create({
       model,
       messages,
-      max_tokens: 400,
+      max_tokens: maxTokens ?? 400,  // default 400 for chat, callers can request more
       temperature: 0.7,
     })
 
