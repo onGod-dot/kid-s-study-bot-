@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush } from 'lucide-react'
+import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush, Download } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { TogetherAIService } from '@/lib/together-ai'
 import Confetti from '@/components/Confetti'
@@ -140,6 +140,25 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addMessage, clearMessages, getMessages } = useAppStore()
   const messages = getMessages(avatar.id)
+
+  // ── Download generated image via proxy to avoid CORS ─────────────────────
+  const downloadImage = async (imageUrl: string, label: string) => {
+    try {
+      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`)
+      if (!res.ok) throw new Error('fetch failed')
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${label.replace(/\s+/g, '-').toLowerCase()}.png`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      toast.success('Image downloaded!')
+    } catch {
+      // Fallback: open in new tab so user can save manually
+      window.open(imageUrl, '_blank', 'noopener,noreferrer')
+      toast('Opening image in new tab — right-click to save.', { icon: '🖼️' })
+    }
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -391,11 +410,20 @@ RULES:
                   )}
 
                   {message.imageUrl && (
-                    <img
-                      src={message.imageUrl}
-                      alt="Generated illustration"
-                      className="mt-2 rounded-xl max-w-full border border-white/20 shadow-lg"
-                    />
+                    <div className="mt-2 space-y-2">
+                      <img
+                        src={message.imageUrl}
+                        alt="Generated illustration"
+                        className="rounded-xl max-w-full border border-white/20 shadow-lg"
+                      />
+                      <button
+                        onClick={() => downloadImage(message.imageUrl!, message.content)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all w-full justify-center"
+                      >
+                        <Download className="w-3 h-3" />
+                        Download Image
+                      </button>
+                    </div>
                   )}
                 </div>
 
