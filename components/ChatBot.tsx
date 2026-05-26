@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush, Download } from 'lucide-react'
+import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush, Download, ImagePlus, X, Pencil } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { TogetherAIService } from '@/lib/together-ai'
 import Confetti from '@/components/Confetti'
@@ -137,11 +137,14 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
   const [avatarBounce, setAvatarBounce] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
   const [latestAssistantId, setLatestAssistantId] = useState<string | null>(null)
+  // Attached image for upload/edit flow
+  const [attachedImage, setAttachedImage] = useState<{ dataUrl: string; file: File } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addMessage, clearMessages, getMessages } = useAppStore()
   const messages = getMessages(avatar.id)
 
-  // ── Download generated image via proxy to avoid CORS ─────────────────────
+  // ── Download generated image via proxy ────────────────────────────────────
   const downloadImage = async (imageUrl: string, label: string) => {
     try {
       const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`)
@@ -154,10 +157,35 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
       URL.revokeObjectURL(a.href)
       toast.success('Image downloaded!')
     } catch {
-      // Fallback: open in new tab so user can save manually
       window.open(imageUrl, '_blank', 'noopener,noreferrer')
       toast('Opening image in new tab — right-click to save.', { icon: '🖼️' })
     }
+  }
+
+  // ── Handle image file picked from device ─────────────────────────────────
+  const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) { toast.error('Please pick an image file.'); return }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setAttachedImage({ dataUrl: ev.target?.result as string, file })
+    }
+    reader.readAsDataURL(file)
+    // Reset input so same file can be re-picked
+    e.target.value = ''
+  }
+
+  // ── Detect edit intent ────────────────────────────────────────────────────
+  const isEditRequest = (text: string): boolean =>
+    /\b(edit|change|modify|update|make it|turn it|add|remove|replace|transform|convert|recolor|redraw|redo|adjust)\b/i.test(text)
+
+  // ── Upload image to Together AI via STT route (reuse base64 path) ─────────
+  // We need a public URL for the edit API — upload via proxy or use data URL directly
+  // FLUX.1-kontext-pro accepts base64 data URLs as image_url
+  const getImageUrlForEdit = async (dataUrl: string): Promise<string> => {
+    // Together AI's kontext model accepts data URLs directly
+    return dataUrl
   }
 
   const scrollToBottom = () => {
@@ -221,10 +249,65 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
   }
 
   const handleSendMessage = async () => {
-    if (!input.trim() || isLoading) return
+    if ((!input.trim() && !attachedImage) || isLoading) return
     const userMessage = input.trim()
     setInput('')
 
+    // ── Image EDIT: user attached an image + typed an instruction ────────────
+    if (attachedImage && userMessage) {
+      const imgData = attachedImage.dataUrl
+      setAttachedImage(null)
+      addMessage(avatar.id, {
+        role: 'user',
+        content: userMessage,
+        imageUrl: imgData,
+      })
+      addMessage(avatar.id, {
+        role: 'assistant',
+        content: ageGroup === 'teens' ? '✏️ Editing your image...' : '🎨 Making changes to your image...',
+      })
+      setIsLoading(true)
+      try {
+        const editedUrl = await TogetherAIService.editImage(imgData, userMessage, ageGroup)
+        addMessage(avatar.id, {
+          role: 'assistant',
+          content: `Here's your edited image! ✨`,
+          imageUrl: editedUrl,
+        })
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 2200)
+      } catch (err) {
+        console.error('Edit image error:', err)
+        addMessage(avatar.id, {
+          role: 'assistant',
+          content: `Sorry, I couldn't edit that image. Try a different description!`,
+        })
+        toast.error('Image edit failed. Please try again.')
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+
+    // ── Image UPLOAD with no instruction: describe the image ─────────────────
+    if (attachedImage && !userMessage) {
+      const imgData = attachedImage.dataUrl
+      setAttachedImage(null)
+      addMessage(avatar.id, {
+        role: 'user',
+        content: '📎 What can you tell me about this image?',
+        imageUrl: imgData,
+      })
+      addMessage(avatar.id, {
+        role: 'assistant',
+        content: ageGroup === 'kids'
+          ? `That's a cool image! 🖼️ To edit it, type what changes you'd like and attach it again — like "make it night time" or "add a rainbow"!`
+          : `Image received! To edit it, attach it again and describe the changes you want — e.g. "change the background to space" or "make it more vibrant".`,
+      })
+      return
+    }
+
+    // ── Text-only image generation ────────────────────────────────────────────
     if (isImageRequest(userMessage)) {
       await handleImageRequest(userMessage)
       return
@@ -400,6 +483,14 @@ RULES:
 
               <div className={`max-w-[82%] sm:max-w-[78%]`}>
                 <div className={`px-3 py-2.5 border ${message.role === 'user' ? tc.userBubble : tc.assistantBubble}`}>
+                  {/* Show attached image in user bubble */}
+                  {message.role === 'user' && message.imageUrl && (
+                    <img
+                      src={message.imageUrl}
+                      alt="Uploaded"
+                      className="mb-2 rounded-xl max-w-[180px] border border-white/20 shadow"
+                    />
+                  )}
                   {/* Content */}
                   {message.role === 'assistant' && message.id === latestAssistantId && !message.imageUrl ? (
                     <TypewriterFormatted text={message.content} speed={ageGroup === 'kids' ? 16 : 10} />
@@ -409,20 +500,41 @@ RULES:
                       : <p className="text-white text-xs sm:text-sm leading-relaxed">{message.content}</p>
                   )}
 
-                  {message.imageUrl && (
+                  {message.imageUrl && message.role === 'assistant' && (
                     <div className="mt-2 space-y-2">
                       <img
                         src={message.imageUrl}
                         alt="Generated illustration"
                         className="rounded-xl max-w-full border border-white/20 shadow-lg"
                       />
-                      <button
-                        onClick={() => downloadImage(message.imageUrl!, message.content)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all w-full justify-center"
-                      >
-                        <Download className="w-3 h-3" />
-                        Download Image
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => downloadImage(message.imageUrl!, message.content)}
+                          className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all justify-center"
+                        >
+                          <Download className="w-3 h-3" />
+                          Download
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Pre-load this generated image for editing
+                            fetch(`/api/proxy-image?url=${encodeURIComponent(message.imageUrl!)}`)
+                              .then(r => r.blob())
+                              .then(blob => {
+                                const file = new File([blob], 'image.png', { type: 'image/png' })
+                                const reader = new FileReader()
+                                reader.onload = e => setAttachedImage({ dataUrl: e.target?.result as string, file })
+                                reader.readAsDataURL(file)
+                                toast('Image loaded — type your edit instruction below!', { icon: '✏️' })
+                              })
+                              .catch(() => toast.error('Could not load image for editing.'))
+                          }}
+                          className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all justify-center"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Edit
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -486,14 +598,67 @@ RULES:
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
+      {/* Attached image preview */}
+      <AnimatePresence>
+        {attachedImage && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+            className="mb-2 relative inline-flex"
+          >
+            <img
+              src={attachedImage.dataUrl}
+              alt="Attached"
+              className="h-16 w-16 rounded-xl object-cover border border-white/20 shadow-lg"
+            />
+            <button
+              onClick={() => setAttachedImage(null)}
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors"
+            >
+              <X className="w-3 h-3 text-white" />
+            </button>
+            <div className="absolute bottom-0 left-0 right-0 bg-black/50 rounded-b-xl px-1 py-0.5 text-center">
+              <span className="text-white/80 text-[9px]">
+                {input.trim() ? 'Edit mode ✏️' : 'Describe to edit'}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Input row */}
       <div className="flex flex-row gap-2">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImagePick}
+        />
+
+        {/* Image upload button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading}
+          title="Upload image to edit"
+          className={`p-2.5 sm:p-3 rounded-xl border ${tc.button} disabled:opacity-50 flex-shrink-0`}
+        >
+          {attachedImage
+            ? <Pencil className="w-4 h-4" />
+            : <ImagePlus className="w-4 h-4" />
+          }
+        </button>
+
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-          placeholder={ageGroup === 'kids' ? `Ask ${avatar.name} anything! 🌟` : `Ask ${avatar.name}...`}
+          placeholder={
+            attachedImage
+              ? 'Describe your edit (e.g. "make it night time")...'
+              : ageGroup === 'kids' ? `Ask ${avatar.name} anything! 🌟` : `Ask ${avatar.name}...`
+          }
           className={`flex-1 min-w-0 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border ${tc.input} focus:outline-none focus:ring-2 focus:ring-white/20 text-sm`}
           disabled={isLoading}
         />
@@ -507,7 +672,7 @@ RULES:
           </button>
           <button
             onClick={handleSendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && !attachedImage) || isLoading}
             className={`px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl border ${tc.button} disabled:opacity-50`}
           >
             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

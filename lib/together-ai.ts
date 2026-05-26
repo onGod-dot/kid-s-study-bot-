@@ -45,6 +45,24 @@ export class TogetherAIService {
     return data.imageUrl
   }
 
+  // Image editing — takes an existing image URL + text instruction
+  static async editImage(imageUrl: string, instruction: string, ageGroup: 'kids' | 'teens' = 'kids'): Promise<string> {
+    const response = await fetch('/api/edit-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageUrl, instruction, ageGroup }),
+    })
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(`Edit Image API Error: ${err.error || response.statusText}`)
+    }
+
+    const data = await response.json()
+    if (!data.imageUrl) throw new Error('No edited image URL returned')
+    return data.imageUrl
+  }
+
   // Speech-to-text via server-side route (keeps key server-side)
   static async speechToText(file: File, language: string = 'en'): Promise<string> {
     const formData = new FormData()
