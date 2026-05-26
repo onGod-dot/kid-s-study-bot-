@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush, Download, ImagePlus, X, Pencil } from 'lucide-react'
+import { Send, Mic, MicOff, Loader2, Volume2, VolumeX, Paintbrush, Download, ImagePlus, X, Pencil, Film } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { TogetherAIService } from '@/lib/together-ai'
 import Confetti from '@/components/Confetti'
@@ -139,6 +139,8 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
   const [latestAssistantId, setLatestAssistantId] = useState<string | null>(null)
   // Attached image for upload/edit flow
   const [attachedImage, setAttachedImage] = useState<{ dataUrl: string; file: File } | null>(null)
+  // Pending video jobs: messageId → jobId
+  const [videoJobs, setVideoJobs] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { addMessage, clearMessages, getMessages } = useAppStore()
@@ -188,7 +190,58 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
     return dataUrl
   }
 
-  const scrollToBottom = () => {
+  // ── Detect video generation intent ───────────────────────────────────────
+  const isVideoRequest = (text: string): boolean =>
+    /\b(make\s+a\s+video|create\s+a\s+video|generate\s+a\s+video|animate|video\s+of|video\s+clip|short\s+video|turn\s+into\s+video|bring\s+to\s+life)\b/i.test(text)
+
+  // ── Start a video job and poll until done ─────────────────────────────────
+  const handleVideoRequest = async (userMessage: string, sourceImageUrl?: string) => {
+    const msgId = Date.now().toString()
+    addMessage(avatar.id, { role: 'user', content: userMessage, ...(sourceImageUrl ? { imageUrl: sourceImageUrl } : {}) })
+
+    // Placeholder message while generating
+    const placeholderId = (Date.now() + 1).toString()
+    addMessage(avatar.id, {
+      role: 'assistant',
+      content: ageGroup === 'kids'
+        ? '🎬 Making your video... this takes about 1-2 minutes! ⏳'
+        : '🎬 Generating your video — usually takes 1-2 minutes...',
+    })
+
+    setIsLoading(true)
+    try {
+      const jobId = await TogetherAIService.generateVideo(userMessage, ageGroup, sourceImageUrl)
+
+      // Poll every 15 seconds
+      const poll = async (): Promise<void> => {
+        const result = await TogetherAIService.pollVideo(jobId)
+        if (result.status === 'completed' && result.videoUrl) {
+          addMessage(avatar.id, {
+            role: 'assistant',
+            content: `Here's your video! 🎬`,
+            imageUrl: result.videoUrl, // reuse imageUrl field to store video URL
+          })
+          setShowConfetti(true)
+          setTimeout(() => setShowConfetti(false), 2500)
+          setIsLoading(false)
+        } else if (result.status === 'failed') {
+          addMessage(avatar.id, { role: 'assistant', content: `Sorry, the video failed to generate. Try a simpler description!` })
+          toast.error('Video generation failed.')
+          setIsLoading(false)
+        } else {
+          // Still in progress — poll again in 15s
+          setTimeout(poll, 15000)
+        }
+      }
+
+      setTimeout(poll, 15000)
+    } catch (err) {
+      console.error('Video error:', err)
+      addMessage(avatar.id, { role: 'assistant', content: `Couldn't start video generation. Please try again!` })
+      toast.error('Video generation failed.')
+      setIsLoading(false)
+    }
+  }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
@@ -304,6 +357,22 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
           ? `That's a cool image! 🖼️ To edit it, type what changes you'd like and attach it again — like "make it night time" or "add a rainbow"!`
           : `Image received! To edit it, attach it again and describe the changes you want — e.g. "change the background to space" or "make it more vibrant".`,
       })
+      return
+    }
+
+    // ── Image-to-video: user attached an image + asked for a video ───────────
+    if (attachedImage && isVideoRequest(userMessage)) {
+      const imgData = attachedImage.dataUrl
+      setAttachedImage(null)
+      setInput('')
+      await handleVideoRequest(userMessage, imgData)
+      return
+    }
+
+    // ── Text-to-video ─────────────────────────────────────────────────────────
+    if (isVideoRequest(userMessage)) {
+      setInput('')
+      await handleVideoRequest(userMessage)
       return
     }
 
@@ -502,11 +571,22 @@ RULES:
 
                   {message.imageUrl && message.role === 'assistant' && (
                     <div className="mt-2 space-y-2">
-                      <img
-                        src={message.imageUrl}
-                        alt="Generated illustration"
-                        className="rounded-xl max-w-full border border-white/20 shadow-lg"
-                      />
+                      {/* Video or image */}
+                      {message.imageUrl.includes('.mp4') || message.imageUrl.includes('video') ? (
+                        <video
+                          src={message.imageUrl}
+                          controls
+                          autoPlay
+                          loop
+                          className="rounded-xl max-w-full border border-white/20 shadow-lg w-full"
+                        />
+                      ) : (
+                        <img
+                          src={message.imageUrl}
+                          alt="Generated illustration"
+                          className="rounded-xl max-w-full border border-white/20 shadow-lg"
+                        />
+                      )}
                       <div className="flex gap-2">
                         <button
                           onClick={() => downloadImage(message.imageUrl!, message.content)}
@@ -515,25 +595,50 @@ RULES:
                           <Download className="w-3 h-3" />
                           Download
                         </button>
-                        <button
-                          onClick={() => {
-                            // Pre-load this generated image for editing
-                            fetch(`/api/proxy-image?url=${encodeURIComponent(message.imageUrl!)}`)
-                              .then(r => r.blob())
-                              .then(blob => {
-                                const file = new File([blob], 'image.png', { type: 'image/png' })
-                                const reader = new FileReader()
-                                reader.onload = e => setAttachedImage({ dataUrl: e.target?.result as string, file })
-                                reader.readAsDataURL(file)
-                                toast('Image loaded — type your edit instruction below!', { icon: '✏️' })
-                              })
-                              .catch(() => toast.error('Could not load image for editing.'))
-                          }}
-                          className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all justify-center"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          Edit
-                        </button>
+                        {/* Only show Edit for images, not videos */}
+                        {!message.imageUrl.includes('.mp4') && !message.imageUrl.includes('video') && (
+                          <>
+                            <button
+                              onClick={() => {
+                                fetch(`/api/proxy-image?url=${encodeURIComponent(message.imageUrl!)}`)
+                                  .then(r => r.blob())
+                                  .then(blob => {
+                                    const file = new File([blob], 'image.png', { type: 'image/png' })
+                                    const reader = new FileReader()
+                                    reader.onload = e => setAttachedImage({ dataUrl: e.target?.result as string, file })
+                                    reader.readAsDataURL(file)
+                                    toast('Image loaded — type your edit instruction below!', { icon: '✏️' })
+                                  })
+                                  .catch(() => toast.error('Could not load image for editing.'))
+                              }}
+                              className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all justify-center"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => {
+                                fetch(`/api/proxy-image?url=${encodeURIComponent(message.imageUrl!)}`)
+                                  .then(r => r.blob())
+                                  .then(blob => {
+                                    const file = new File([blob], 'image.png', { type: 'image/png' })
+                                    const reader = new FileReader()
+                                    reader.onload = e => {
+                                      setAttachedImage({ dataUrl: e.target?.result as string, file })
+                                      setInput('animate this image with smooth natural motion')
+                                      toast('Ready — tap Send to animate!', { icon: '🎬' })
+                                    }
+                                    reader.readAsDataURL(file)
+                                  })
+                                  .catch(() => toast.error('Could not load image.'))
+                              }}
+                              className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs font-medium transition-all justify-center"
+                            >
+                              <Film className="w-3 h-3" />
+                              Animate
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}

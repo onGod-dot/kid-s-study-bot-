@@ -63,6 +63,36 @@ export class TogetherAIService {
     return data.imageUrl
   }
 
+  // Video generation — creates a job and returns the job ID (async)
+  static async generateVideo(prompt: string, ageGroup: 'kids' | 'teens' = 'kids', imageUrl?: string): Promise<string> {
+    const response = await fetch('/api/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', prompt, ageGroup, imageUrl }),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(`Video API Error: ${err.error || response.statusText}`)
+    }
+    const data = await response.json()
+    if (!data.jobId) throw new Error('No job ID returned')
+    return data.jobId
+  }
+
+  // Poll video job status — returns { status, videoUrl }
+  static async pollVideo(jobId: string): Promise<{ status: string; videoUrl: string | null; error: string | null }> {
+    const response = await fetch('/api/generate-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'poll', jobId }),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(`Poll API Error: ${err.error || response.statusText}`)
+    }
+    return response.json()
+  }
+
   // Speech-to-text via server-side route (keeps key server-side)
   static async speechToText(file: File, language: string = 'en'): Promise<string> {
     const formData = new FormData()
