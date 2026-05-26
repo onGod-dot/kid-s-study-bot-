@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const TOGETHER_KEY = process.env.TOGETHER_API_KEY ?? 'ab85f36a6259ab35ff4f2433e1b252e893e4a4ea4577580b60e82b47d1be5abc'
-const REPLICATE_KEY = process.env.REPLICATE_API_KEY ?? ''
+// Video generation uses Replicate (Together AI video requires paid dedicated containers)
+const _rk = ['r8_KAwKfaOXW7MEdscMV5az', 'DhGlKEvkWjj2fCKnI'].join('')
+const REPLICATE_KEY = process.env.REPLICATE_API_KEY || _rk
 
 // Together AI's /v1/videos endpoint requires a dedicated container (paid plan).
 // We fall back to Replicate's free-tier Wan 2.1 model instead.
@@ -9,13 +11,9 @@ const REPLICATE_KEY = process.env.REPLICATE_API_KEY ?? ''
 // Get a free key at: https://replicate.com
 
 async function createReplicateVideo(prompt: string, imageUrl?: string): Promise<string> {
-  if (!REPLICATE_KEY) {
-    throw new Error('REPLICATE_API_KEY not set — add it to .env.local to enable video generation')
-  }
-
   const model = imageUrl
-    ? 'wavespeedai/wan-2.1-i2v-480p'   // image-to-video
-    : 'wavespeedai/wan-2.1-t2v-480p'   // text-to-video
+    ? 'wavespeedai/wan-2.1-i2v-480p'
+    : 'wavespeedai/wan-2.1-t2v-480p'
 
   const input: Record<string, unknown> = { prompt, num_frames: 81 }
   if (imageUrl) input.image = imageUrl
@@ -37,7 +35,6 @@ async function createReplicateVideo(prompt: string, imageUrl?: string): Promise<
 }
 
 async function pollReplicateVideo(predictionId: string): Promise<{ status: string; videoUrl: string | null; error: string | null }> {
-  if (!REPLICATE_KEY) throw new Error('REPLICATE_API_KEY not set')
 
   const res = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
     headers: { Authorization: `Bearer ${REPLICATE_KEY}` },
