@@ -196,11 +196,7 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
 
   // ── Start a video job and poll until done ─────────────────────────────────
   const handleVideoRequest = async (userMessage: string, sourceImageUrl?: string) => {
-    const msgId = Date.now().toString()
     addMessage(avatar.id, { role: 'user', content: userMessage, ...(sourceImageUrl ? { imageUrl: sourceImageUrl } : {}) })
-
-    // Placeholder message while generating
-    const placeholderId = (Date.now() + 1).toString()
     addMessage(avatar.id, {
       role: 'assistant',
       content: ageGroup === 'kids'
@@ -208,38 +204,38 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
         : '🎬 Generating your video — usually takes 1-2 minutes...',
     })
 
-    setIsLoading(true)
+    // Don't block the whole chat — just show the message and poll in background
     try {
       const jobId = await TogetherAIService.generateVideo(userMessage, ageGroup, sourceImageUrl)
 
-      // Poll every 15 seconds
       const poll = async (): Promise<void> => {
-        const result = await TogetherAIService.pollVideo(jobId)
-        if (result.status === 'completed' && result.videoUrl) {
-          addMessage(avatar.id, {
-            role: 'assistant',
-            content: `Here's your video! 🎬`,
-            imageUrl: result.videoUrl, // reuse imageUrl field to store video URL
-          })
-          setShowConfetti(true)
-          setTimeout(() => setShowConfetti(false), 2500)
-          setIsLoading(false)
-        } else if (result.status === 'failed') {
-          addMessage(avatar.id, { role: 'assistant', content: `Sorry, the video failed to generate. Try a simpler description!` })
-          toast.error('Video generation failed.')
-          setIsLoading(false)
-        } else {
-          // Still in progress — poll again in 15s
-          setTimeout(poll, 15000)
+        try {
+          const result = await TogetherAIService.pollVideo(jobId)
+          if (result.status === 'completed' && result.videoUrl) {
+            addMessage(avatar.id, {
+              role: 'assistant',
+              content: `Here's your video! 🎬`,
+              imageUrl: result.videoUrl,
+            })
+            setShowConfetti(true)
+            setTimeout(() => setShowConfetti(false), 2500)
+          } else if (result.status === 'failed') {
+            addMessage(avatar.id, { role: 'assistant', content: `Sorry, the video failed. Try a simpler description!` })
+            toast.error('Video generation failed.')
+          } else {
+            setTimeout(poll, 15000)
+          }
+        } catch (pollErr) {
+          console.error('Poll error:', pollErr)
+          setTimeout(poll, 20000) // retry on network error
         }
       }
 
       setTimeout(poll, 15000)
     } catch (err) {
-      console.error('Video error:', err)
+      console.error('Video start error:', err)
       addMessage(avatar.id, { role: 'assistant', content: `Couldn't start video generation. Please try again!` })
       toast.error('Video generation failed.')
-      setIsLoading(false)
     }
   }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -364,14 +360,12 @@ export default function ChatBot({ theme, avatar, ageGroup }: ChatBotProps) {
     if (attachedImage && isVideoRequest(userMessage)) {
       const imgData = attachedImage.dataUrl
       setAttachedImage(null)
-      setInput('')
       await handleVideoRequest(userMessage, imgData)
       return
     }
 
     // ── Text-to-video ─────────────────────────────────────────────────────────
     if (isVideoRequest(userMessage)) {
-      setInput('')
       await handleVideoRequest(userMessage)
       return
     }
